@@ -1,7 +1,7 @@
 " File: repeatable-motions.vim
 " Author: Mohammed Chelouti <mhc23 at web dot de>
 " Description: Plugin that makes many motions repeatable
-" Last Modified: Jul 26, 2014
+" Last Modified: Jul 14, 2017
 
 if exists('g:loaded_repeatable_motions') || !has('eval')
     finish
@@ -21,76 +21,104 @@ let s:repeating = 0
 let g:linewise_motion_repeating = 0
 let g:columnwise_motion_repeating = 0
 
-" horizontal start = -1
-" horizontal end = 1
-"
-" vertical start = -2
-" vertical end = 2
-function! s:RepeatMotion(...)
-    if (a:0 > 0)
-        let direction = a:1
+let s:FALSE = 0
+let s:TRUE = !s:FALSE
+let s:axes = {
+            \ 'LINEWISE': 'axis/linewise',
+            \ 'COLUMNWISE': 'axis/columnwise',
+            \ 'PREVIOUS': ''
+            \ }
+
+let s:directions = {
+            \ 'FORWARDS': 'direction/forwards',
+            \ 'BACKWARDS': 'direction/backwards',
+            \ 'PREVIOUS': '',
+            \ 'REVERSE_PREVIOUS': ''
+            \ }
+
+function! s:RepeatMotion(axis, direction)
+    let stand_still_motion = ''
+    let is_valid_axis = a:axis == s:axes.LINEWISE ||
+                \ a:axis == s:axes.COLUMNWISE
+    let is_valid_direction = a:direction == s:directions.FORWARDS ||
+                \ a:direction == s:directions.BACKWARDS
+
+    if !is_valid_direction || !is_valid_direction
+        return stand_still_motion
+    endif
+
+    let is_linewise_repetition = a:axis == s:axes.LINEWISE
+    let is_forwards_repetition = a:direction == s:directions.FORWARDS
+    let motion_object = is_linewise_repetition ?
+                \ s:GetMotionObject(s:previous_linewise_motion) :
+                \ s:GetMotionObject(s:previous_columnwise_motion)
+    let has_motion_object = type(motion_object) == type({})
+
+    if !has_motion_object
+        return stand_still_motion
+    endif
+
+    let s:repeating = s:TRUE
+
+    let direction_as_number = is_forwards_repetition ? 1 : -1
+    " Set the varaiable linewise/columnwise_motion_repeating to 1 or -1, so we don't break API
+    " compatibility for user defined functions that rely on those values
+    if is_linewise_repetition
+        let g:linewise_motion_repeating = direction_as_number
     else
-        let direction = s:GetMotionDirection(s:most_recent_motion)
+        let g:columnwise_motion_repeating = direction_as_number
     endif
 
-    let result = col('.').'|'
-    if direction % 2 == 0
-        let motionObject = s:GetMotionObject(s:previous_linewise_motion)
-    else
-        let motionObject = s:GetMotionObject(s:previous_columnwise_motion)
-    endif
+    let motion_keys = is_forwards_repetition ?
+                \ s:Move(motion_object.forwards.lhs, s:FALSE) :
+                \ s:Move(motion_object.backwards.lhs, s:FALSE)
 
-    if type(motionObject) != type({})
-        return result
-    endif
+    let g:linewise_motion_repeating = s:FALSE
+    let g:columnwise_motion_repeating = s:FALSE
+    let s:repeating = s:FALSE
 
-    let s:repeating = 1
-    if direction % 2 == 0
-        let g:linewise_motion_repeating = direction / 2
-    else
-        let g:columnwise_motion_repeating = direction
-    endif
-
-    if direction > 0
-        let result = s:Move(motionObject.forwards.lhs)
-    elseif direction < 0
-        let result = s:Move(motionObject.backwards.lhs)
-    endif
-
-    let g:linewise_motion_repeating = 0
-    let g:columnwise_motion_repeating = 0
-    let s:repeating = 0
-
-    return result
+    return motion_keys
 endfunction
 
-function! s:Move(motion)
+function! s:Move(motion, replace_most_recent_motion)
     let direction = s:GetMotionDirection(a:motion)
-    let motionObject = s:GetMotionObject(a:motion)
+    let motion_object = s:GetMotionObject(a:motion)
 
-    if type(motionObject) == type({})
-        if motionObject.linewise
-            let s:previous_linewise_motion = s:NormalizeMotion(a:motion)
-        else
-            let s:previous_columnwise_motion = s:NormalizeMotion(a:motion)
-        endif
-
-        let s:most_recent_motion = s:NormalizeMotion(a:motion)
-
-        if direction > 0
-            let directionKey = 'forwards'
-        else
-            let directionKey = 'backwards'
-        endif
-
-        if motionObject[directionKey].expr
-            return eval(motionObject[directionKey].rhs)
-        else
-            let keys = s:MakeKeysFeedable(motionObject[directionKey].rhs)
-            return keys
-        endif
-
+    if a:replace_most_recent_motion
+        call s:SetMostRecentMotion(a:motion)
     endif
+
+    let is_forwards_motion = direction == s:directions.FORWARDS
+    let direction_key = is_forwards_motion ? 'forwards' : 'backwards'
+
+    if motion_object[direction_key].expr
+        return eval(motion_object[direction_key].rhs)
+    else
+        let keys = s:MakeKeysFeedable(motion_object[direction_key].rhs)
+        return keys
+    endif
+
+endfunction
+
+function! s:SetMostRecentMotion(motion)
+    let motion_object = s:GetMotionObject(a:motion)
+    let direction = s:GetMotionDirection(a:motion)
+
+
+    let s:directions.PREVIOUS = direction
+    let s:directions.REVERSE_PREVIOUS = direction == s:directions.FORWARDS ?
+                \ s:directions.BACKWARDS :
+                \ s:directions.FORWARDS
+
+    if motion_object.linewise
+        let s:previous_linewise_motion = s:NormalizeMotion(a:motion)
+        let s:axes.PREVIOUS = s:axes.LINEWISE
+    else
+        let s:previous_columnwise_motion = s:NormalizeMotion(a:motion)
+        let s:axes.PREVIOUS = s:axes.COLUMNWISE
+    endif
+
+    let s:most_recent_motion = s:NormalizeMotion(a:motion)
 endfunction
 
 function! s:MakeKeysFeedable(keystrokes)
@@ -150,8 +178,10 @@ function! AddRepeatableMotion(backwards, forwards, linewise)
         let motionPair.forwards.rhs = a:forwards
     endif
 
-    exe mapstring a:backwards '<SID>Move('''.a:backwards.''')'
-    exe mapstring a:forwards '<SID>Move('''.a:forwards.''')'
+    let backwards_escaped = "'".substitute(a:backwards, "'", "''", 'g')."'"
+    let forwards_escaped = "'".substitute(a:forwards, "'", "''", 'g')."'"
+    exe mapstring a:backwards '<SID>Move('.backwards_escaped.', '.s:TRUE.')'
+    exe mapstring a:forwards '<SID>Move('.forwards_escaped.', '.s:TRUE.')'
 
     let targetList = s:repeatable_motions
 
@@ -315,27 +345,15 @@ function! s:ListMotions()
     endif
 endfunction
 
-" 0: Motion not declared
-" -1: columnwise backwards
-" 1: columnwise forwards
-" -2: linewise backwards
-" 2: linewise forwards
 function! s:GetMotionDirection(motion)
-    let motionObject = s:GetMotionObject(a:motion)
+    let motion_object = s:GetMotionObject(a:motion)
 
-    if type(motionObject) != type({})
-        return 0
-    elseif s:NormalizeMotion(a:motion) ==# s:NormalizeMotion(motionObject.backwards.lhs)
-        let dir = -1
-    else
-        let dir = 1
-    endif
+    let is_forwards_motion =
+                \ s:NormalizeMotion(a:motion) ==# s:NormalizeMotion(motion_object.forwards.lhs)
 
-    if motionObject.linewise
-        return dir * 2
-    else
-        return dir
-    endif
+    return is_forwards_motion ?
+                \ s:directions.FORWARDS :
+                \ s:directions.BACKWARDS
 endfunction
 
 " t/T and f/F are special motions and need this workaround to be easily repeatable
@@ -357,6 +375,14 @@ endfunction
 if !exists('g:tf_workaround')
     let g:tf_workaround = 1
 endif
+
+function! s:ReverseMostRecentMotion()
+    return s:RepeatMotion(s:axes.PREVIOUS, s:directions.REVERSE_PREVIOUS)
+endfunction
+
+function! s:RepeatMostRecentMotion()
+    return s:RepeatMotion(s:axes.PREVIOUS, s:directions.PREVIOUS)
+endfunction
 
 let s:default_mappings = [
             \ {'bwd': '{', 'fwd': '}', 'linewise': 1},
@@ -380,11 +406,12 @@ let s:default_mappings = [
 
 command ListRepeatableMotions call <SID>ListMotions()
 
-noremap <script> <expr> <silent> <Plug>RepeatMotionUp <SID>RepeatMotion(-2)
-noremap <script> <expr> <silent> <Plug>RepeatMotionDown <SID>RepeatMotion(2)
-noremap <script> <expr> <silent> <Plug>RepeatMotionLeft <SID>RepeatMotion(-1)
-noremap <script> <expr> <silent> <Plug>RepeatMotionRight <SID>RepeatMotion(1)
-noremap <script> <expr> <silent> <Plug>RepeatMostRecentMotion <SID>RepeatMotion()
+exe "noremap <script> <expr> <silent> <Plug>RepeatMotionUp <SID>RepeatMotion('".s:axes.LINEWISE."','".s:directions.BACKWARDS."')"
+exe "noremap <script> <expr> <silent> <Plug>RepeatMotionDown <SID>RepeatMotion('".s:axes.LINEWISE."','".s:directions.FORWARDS."')"
+exe "noremap <script> <expr> <silent> <Plug>RepeatMotionLeft <SID>RepeatMotion('".s:axes.COLUMNWISE."','".s:directions.BACKWARDS."')"
+exe "noremap <script> <expr> <silent> <Plug>RepeatMotionRight <SID>RepeatMotion('".s:axes.COLUMNWISE."','".s:directions.FORWARDS."')"
+noremap <script> <expr> <silent> <Plug>RepeatMostRecentMotion <SID>RepeatMostRecentMotion()
+noremap <script> <expr> <silent> <Plug>ReverseMostRecentMotion <SID>ReverseMostRecentMotion()
 
 if g:tf_workaround
     noremap <script> <expr> <silent> t <SID>TFWorkaround('t')

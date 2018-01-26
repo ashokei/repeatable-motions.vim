@@ -19,15 +19,18 @@ This plugin only works if Vim was compiled with the |+eval| feature.
 
 
 ==============================================================================
-                                                    *repeatable-motions-using*
+                                                     *repeatable-motions-using*
 1. Using repeatable motions
 
 |repeatable-motions| allows you to repeat your previously performed motion
-back- and forwards. Most linewise motions are already repeatable. Just hit |}|
-and the cursor moves to the next empty line.
+back- and forwards. Many motions can be repeated without any further
+configuration.
 
-Hit <C-j> and the cursor moves to the next empty line. If you now hit <C-k> it
-will move back to the previous empty line.
+Just hit |}| to move to the next empty line.
+
+Hitting <C-j> will repeat the previous linewise motion i.e. it will behave as
+if you hit |}| again. *<C-k>* will perform the same motion but backwards (i.e.
+|{|).
 
 Columnwise motions can be repeated with <C-h> and <C-l> respectively.
 
@@ -44,10 +47,10 @@ the columnwise motions |f|, |F|, |t|, |T|, |(|, |)|, |[s| and |]s|.
 
 -----------------------------------------------------------------------------
                                                   *repeatable-motions-mapping*
-                                              *<Plug>RepeatMotionLeft* *<C-h>*
-                                                *<Plug>RepeatMotionUp* *<C-k>*
-                                              *<Plug>RepeatMotionDown* *<C-j>*
-                                             *<Plug>RepeatMotionRight* *<C-l>*
+                                                *<Plug>RepeatMotionLeft* *<C-h>*
+                                                  *<Plug>RepeatMotionUp* *<C-k>*
+                                                *<Plug>RepeatMotionDown* *<C-j>*
+                                               *<Plug>RepeatMotionRight* *<C-l>*
 1.2 Changing the default mappings
 
 If you do not want to use the default mappings to repeat motions you can remap
@@ -63,12 +66,14 @@ Pay attention that you must use |:map| and not |:noremap|!
 
 -----------------------------------------------------------------------------
                                               *repeatable-motions-most-recent*
-                                           *<Plug>RepeatMostRecentMotion* *g.*
+                                             *<Plug>RepeatMostRecentMotion* *g.*
+                                            *<Plug>ReverseMostRecentMotion* *g:*
 
-1.3 Repeat most recent motion
+1.3 Repeat and reverse most recent motion
 
 The |<Plug>RepeatMostRecentMotion| mapping repeats the most recent motion in
-the same direction.
+the same direction whereas |<Plug>ReverseMostRecentMotion| performs the most
+recent motion in the opposite direction.
 
 
 ==============================================================================
@@ -97,11 +102,12 @@ Warning! Do NOT escape |key-codes| such as <PageUp> or <Esc>.
 AddRepeatableMotion({backward}, {forward}, {linewise})
     Registers a repeatable motion pair consisting of {backward} and {forward}.
     {backward} is a string containing the {lhs} of the backward mapping.
-    {forward} is a string containing the {lhs} of the forward mapping.
-    If {linewise} is 1 the mapping will be repeated with the |<Plug>RepeatMotionDown|
-    and |<Plug>RepeatMotionUp| motions.
+    {forward} is a string containing the {lhs} of the forward mapping.  If
+    {linewise} is 1 the mapping will be repeated with the
+    |<Plug>RepeatMotionDown| and |<Plug>RepeatMotionUp| motions otherwise
+    |<Plug>RepeatMotionLeft| and |<Plug>RepeatMotionRight| are used.
 
-    AddRepeatableMotion() automatically will add buffer specific mappings as
+    AddRepeatableMotion() will automatically add buffer specific mappings as
     soon as a buffer is loaded.
 
 -----------------------------------------------------------------------------
@@ -120,7 +126,7 @@ RemoveRepeatableMotion({mapping})                   *RemoveRepeatableMotion()*
 -----------------------------------------------------------------------------
                                        *repeatable-motions-relative-direction*
                                              *repeatable-motions-special-case*
-                 *g:vertical_motion_repeating* *g:horizontal_motion_repeating*
+                   *g:linewise_motion_repeating* *g:columnwise_motion_repeating*
 2.3 Special cases
 
 While most motions move into one hardcoded direction, there are some special
@@ -128,9 +134,9 @@ cases that require a hand tailored solution such as |t| or |f|.
 |repeatable-motions| provides some information that allow you to support those
 special motions.
 
-|g:vertical_motion_repeating| is -1 if linewise motion is repeated backwards or
+|g:linewise_motion_repeating| is -1 if linewise motion is repeated backwards or
 1 if forwards.
-|g:horizontal_motion_repeating| is -1 if columnwise motion is repeated backwards or
+|g:columnwise_motion_repeating| is -1 if columnwise motion is repeated backwards or
 1 if forwards.
 >
     " Returns a string that can be used as the rhs of an expression mapping
@@ -193,6 +199,17 @@ all default mappings.
 =============================================================================
                                                 *repeatable-motions-changelog*
 4. Changelog
+
+-----------------------------------------------------------------------------
+v1.2
+Bugfixes:
+- Rectify inaccurate information in help and clear up some ambiguities.
+- Fix |['| and |]'| (and any custom motion containing a single quote) throwing
+  an error.
+
+Features:
+- Added |<Plug>ReverseMostRecentMotion| to perform most recent motion in
+  the oppposite direction.
 
 -----------------------------------------------------------------------------
 v1.1.1
